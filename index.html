@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>環境雷達掃描：實境分類賽</title>
+    <style>
+        :root {
+            --bg-dark: #0a0a0f;
+            --panel-bg: rgba(20, 20, 30, 0.85);
+            --micro-color: #00f0ff; /* Neon Blue */
+            --macro-color: #ff0055; /* Neon Pink */
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', "Microsoft JhengHei", sans-serif;
+            background: radial-gradient(circle at 50% 50%, #1a1a2e 0%, var(--bg-dark) 100%);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        h1 { margin: 0; font-size: 2.2rem; color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+        
+        .dashboard {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            padding: 15px 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        .timer { font-size: 2rem; font-weight: bold; color: var(--success); font-variant-numeric: tabular-nums; text-shadow: 0 0 10px var(--success); }
+        .timer.danger { color: var(--danger); text-shadow: 0 0 10px var(--danger); animation: pulse 0.5s infinite alternate; }
+        .score { font-size: 1.5rem; font-weight: bold; color: #fbbf24; }
+
+        @keyframes pulse { from { opacity: 1; } to { opacity: 0.5; } }
+
+        .game-area {
+            display: grid;
+            grid-template-columns: 1fr 300px 1fr;
+            gap: 20px;
+            flex-grow: 1;
+        }
+
+        /* Radar Zones */
+        .radar-panel {
+            background: var(--panel-bg);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            position: relative;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.5);
+        }
+
+        .panel-title {
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px dashed;
+        }
+
+        .micro-panel { border-color: rgba(0, 240, 255, 0.3); }
+        .micro-panel .panel-title { color: var(--micro-color); border-bottom-color: var(--micro-color); text-shadow: 0 0 10px var(--micro-color); }
+        
+        .macro-panel { border-color: rgba(255, 0, 85, 0.3); }
+        .macro-panel .panel-title { color: var(--macro-color); border-bottom-color: var(--macro-color); text-shadow: 0 0 10px var(--macro-color); }
+
+        .slots-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .drop-slot {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid #475569;
+            border-radius: 8px;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            text-align: center;
+            padding: 10px;
+            transition: all 0.2s;
+            color: var(--text-muted);
+        }
+
+        .drop-slot span { font-size: 1.1rem; font-weight: bold; color: #fff; margin-bottom: 5px; }
+        
+        /* Drag Over Effects */
+        .micro-panel .drop-slot.drag-over { background: rgba(0, 240, 255, 0.1); border-color: var(--micro-color); box-shadow: 0 0 15px rgba(0, 240, 255, 0.3); transform: scale(1.05); }
+        .macro-panel .drop-slot.drag-over { background: rgba(255, 0, 85, 0.1); border-color: var(--macro-color); box-shadow: 0 0 15px rgba(255, 0, 85, 0.3); transform: scale(1.05); }
+
+        /* Center Deck */
+        .deck-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .deck-status { font-size: 1.1rem; color: #cbd5e1; }
+
+        .event-card {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 2px solid #64748b;
+            border-radius: 12px;
+            padding: 25px;
+            width: 100%;
+            box-sizing: border-box;
+            text-align: center;
+            cursor: grab;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            user-select: none;
+            position: relative;
+            z-index: 10;
+            transition: transform 0.1s;
+        }
+        
+        .event-card:active { cursor: grabbing; transform: scale(0.95); opacity: 0.8; }
+        .event-card h3 { margin: 0 0 15px 0; color: #fff; font-size: 1.2rem; line-height: 1.5;}
+        .event-tag { display: inline-block; background: #334155; padding: 5px 10px; border-radius: 20px; font-size: 0.8rem; color: #cbd5e1; }
+
+        /* Modal */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); backdrop-filter: blur(8px);
+            z-index: 1000; justify-content: center; align-items: center;
+        }
+
+        .modal-content {
+            background: #1e293b; border: 1px solid var(--border-color); border-radius: 15px;
+            padding: 40px; width: 90%; max-width: 600px; text-align: center;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+
+        .btn {
+            background: #fff; color: #000; border: none; padding: 15px 30px;
+            font-size: 1.2rem; font-weight: bold; border-radius: 8px; cursor: pointer;
+            margin-top: 20px; transition: 0.2s;
+        }
+        .btn:hover { background: #cbd5e1; }
+
+        #feedback-toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            padding: 15px 30px; border-radius: 30px; font-weight: bold; font-size: 1.1rem;
+            color: #fff; opacity: 0; pointer-events: none; transition: 0.3s; z-index: 999;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>📡 環境雷達掃描：實境分類賽</h1>
+        <p style="color: var(--text-muted); margin: 5px 0 0 0;">辨識市場突發事件，拖曳至正確的個體/總體環境次分類中。</p>
+    </header>
+
+    <div class="dashboard">
+        <div class="score">戰略積分：<span id="score">0</span></div>
+        <div class="timer" id="timer">90.0</div>
+    </div>
+
+    <div class="game-area">
+        <div class="radar-panel micro-panel">
+            <div class="panel-title">個體環境 (Micro)</div>
+            <div class="slots-grid">
+                <div class="drop-slot" data-id="micro-company" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>公司</span>(Company)</div>
+                <div class="drop-slot" data-id="micro-supplier" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>供應商</span>(Suppliers)</div>
+                <div class="drop-slot" data-id="micro-intermediary" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>中間機構</span>(Intermediaries)</div>
+                <div class="drop-slot" data-id="micro-customer" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>顧客市場</span>(Customers)</div>
+                <div class="drop-slot" data-id="micro-competitor" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>競爭者</span>(Competitors)</div>
+                <div class="drop-slot" data-id="micro-public" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>公眾</span>(Publics)</div>
+            </div>
+        </div>
+
+        <div class="deck-panel">
+            <div class="deck-status">未處理情報：<span id="cards-left">10</span> / 10</div>
+            <div id="card-spawn-point" style="width: 100%;">
+                </div>
+            <p style="color: #64748b; font-size: 0.9rem; text-align: center;">長按並拖曳卡片至兩側雷達區塊</p>
+        </div>
+
+        <div class="radar-panel macro-panel">
+            <div class="panel-title">總體環境 (Macro)</div>
+            <div class="slots-grid">
+                <div class="drop-slot" data-id="macro-demographic" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>人口統計</span>(Demographic)</div>
+                <div class="drop-slot" data-id="macro-economic" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>經濟</span>(Economic)</div>
+                <div class="drop-slot" data-id="macro-natural" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>自然</span>(Natural)</div>
+                <div class="drop-slot" data-id="macro-tech" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>科技</span>(Technological)</div>
+                <div class="drop-slot" data-id="macro-political" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>政治</span>(Political)</div>
+                <div class="drop-slot" data-id="macro-cultural" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="drop(event)"><span>文化</span>(Cultural)</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="feedback-toast"></div>
+
+    <div class="modal-overlay" id="modal">
+        <div class="modal-content">
+            <h2 id="modal-title" style="margin-top:0; font-size:2.5rem;">掃描完成</h2>
+            <p id="modal-desc" style="font-size: 1.2rem; color: var(--text-muted); line-height: 1.6;"></p>
+            <div style="font-size: 3rem; font-weight: bold; margin: 20px 0; color: #fbbf24;" id="final-score"></div>
+            <button class="btn" onclick="location.reload()">重新啟動雷達</button>
+        </div>
+    </div>
+
+<script>
+    // 嚴格依據 CH03 簡報內容設計的突發事件題庫
+    const eventsDB = [
+        { id: 1, text: "公司的主要零件供應廠商突發罷工，導致生產線面臨斷鏈危機。", target: "micro-supplier", type: "個體-供應商", exp: "供應商直接影響公司運作，屬內部價值網絡。" },
+        { id: 2, text: "網路上出現網紅針對本品牌產品品質的抱怨影片，引發公關危機。", target: "micro-public", type: "個體-公眾", exp: "社群公眾 (Publics) 屬於個體環境中的一環。" },
+        { id: 3, text: "國內新生兒出生率創新低，導致嬰幼兒產品潛在市場萎縮。", target: "macro-demographic", type: "總體-人口統計", exp: "人口結構的長期變遷屬於不可控的總體因素。" },
+        { id: 4, text: "政府突然通過新的嚴格環保法規，限制現有產品包裝材料的使用。", target: "macro-political", type: "總體-政治", exp: "政府法規與政治環境屬總體環境。" },
+        { id: 5, text: "最大的連鎖經銷商要求提高分潤比例，否則將下架我們的產品。", target: "micro-intermediary", type: "個體-中間機構", exp: "經銷商屬於行銷中間機構 (Marketing Intermediaries)。" },
+        { id: 6, text: "主要競爭對手突然宣布全線產品降價 30% 進行市場搶奪。", target: "micro-competitor", type: "個體-競爭者", exp: "競爭者的動態直接影響公司，屬個體環境。" },
+        { id: 7, text: "央行宣布升息，導致民眾貸款壓力大增、可支配所得下降。", target: "macro-economic", type: "總體-經濟", exp: "利率與購買力屬於總體經濟環境。" },
+        { id: 8, text: "年輕世代越來越重視「工作與生活平衡」的價值觀，不愛加班。", target: "macro-cultural", type: "總體-文化", exp: "次級信仰與社會價值觀的改變，屬文化環境。" },
+        { id: 9, text: "生成式 AI 技術爆發，大幅降低了內容產製與程式開發的成本。", target: "macro-tech", type: "總體-科技", exp: "新科技的發明會改變產業規則，屬科技環境。" },
+        { id: 10, text: "聖嬰現象導致咖啡豆主產區發生嚴重旱災，全球原物料短缺。", target: "macro-natural", type: "總體-自然", exp: "氣候變遷與天然資源短缺屬自然環境。" },
+        { id: 11, text: "公司財務部門決定縮減下一季的行銷預算。", target: "micro-company", type: "個體-公司", exp: "公司內部各部門（如財務、研發）也是個體環境的一環。" },
+        { id: 12, text: "主要B2B企業客戶因業績不佳，削減了對本公司的軟體採購量。", target: "micro-customer", type: "個體-顧客市場", exp: "顧客市場（包含消費者、企業或政府）屬個體環境。" }
+    ];
+
+    let gameCards = [];
+    let currentCardIndex = 0;
+    let score = 0;
+    let timeLeft = 90.0;
+    let timerId;
+    let gameActive = true;
+
+    window.onload = () => {
+        // 隨機挑選 10 題
+        gameCards = [...eventsDB].sort(() => Math.random() - 0.5).slice(0, 10);
+        document.getElementById('cards-left').innerText = gameCards.length;
+        spawnCard();
+        timerId = setInterval(updateTimer, 100);
+    };
+
+    function spawnCard() {
+        if (currentCardIndex >= gameCards.length) {
+            endGame();
+            return;
+        }
+        const cardData = gameCards[currentCardIndex];
+        const spawnPoint = document.getElementById('card-spawn-point');
+        spawnPoint.innerHTML = `
+            <div class="event-card" id="current-card" draggable="true" ondragstart="drag(event)" data-target="${cardData.target}" data-exp="${cardData.exp}" data-type="${cardData.type}">
+                <span class="event-tag">突發情報 #${currentCardIndex + 1}</span>
+                <h3>${cardData.text}</h3>
+            </div>
+        `;
+        document.getElementById('cards-left').innerText = gameCards.length - currentCardIndex;
+    }
+
+    function updateTimer() {
+        if (!gameActive) return;
+        timeLeft -= 0.1;
+        const timerEl = document.getElementById('timer');
+        
+        if (timeLeft <= 0) {
+            timeLeft = 0;
+            timerEl.innerText = "0.0";
+            endGame(true);
+        } else {
+            timerEl.innerText = timeLeft.toFixed(1);
+            if (timeLeft <= 15.0) timerEl.classList.add('danger');
+        }
+    }
+
+    // Drag and Drop
+    function drag(ev) {
+        if (!gameActive) return;
+        ev.dataTransfer.setData("text", ev.target.id);
+        setTimeout(() => ev.target.style.opacity = "0.2", 0);
+    }
+
+    function allowDrop(ev) {
+        if (!gameActive) return;
+        ev.preventDefault();
+        let target = ev.target.closest('.drop-slot');
+        if (target) target.classList.add('drag-over');
+    }
+
+    function dragLeave(ev) {
+        let target = ev.target.closest('.drop-slot');
+        if (target) target.classList.remove('drag-over');
+    }
+
+    function drop(ev) {
+        if (!gameActive) return;
+        ev.preventDefault();
+        let target = ev.target.closest('.drop-slot');
+        
+        const data = ev.dataTransfer.getData("text");
+        const card = document.getElementById(data);
+        if(card) card.style.opacity = "1";
+
+        if (target && card) {
+            target.classList.remove('drag-over');
+            checkAnswer(target.dataset.id, card);
+        }
+    }
+
+    function showToast(msg, isSuccess) {
+        const toast = document.getElementById('feedback-toast');
+        toast.innerHTML = msg;
+        toast.style.background = isSuccess ? "var(--success)" : "var(--danger)";
+        toast.style.opacity = "1";
+        toast.style.transform = "translate(-50%, -20px)";
+        
+        setTimeout(() => {
+            toast.style.opacity = "0";
+            toast.style.transform = "translate(-50%, 0)";
+        }, 2000);
+    }
+
+    function checkAnswer(dropId, cardElement) {
+        const targetId = cardElement.dataset.target;
+        const exp = cardElement.dataset.exp;
+        const typeName = cardElement.dataset.type;
+
+        // 判斷是否為「大類正確」但不夠精準
+        const isMicroDrop = dropId.startsWith("micro");
+        const isMicroTarget = targetId.startsWith("micro");
+        const sameMajorCategory = (isMicroDrop && isMicroTarget) || (!isMicroDrop && !isMicroTarget);
+
+        if (dropId === targetId) {
+            // 完全命中次分類
+            score += 100;
+            showToast(`✅ 完全命中！${typeName}`, true);
+        } else if (sameMajorCategory) {
+            // 大類對，小類錯
+            score += 20;
+            showToast(`⚠️ 粗略命中！屬於同個大類，但正確應為：${typeName}<br><span style="font-size:0.8rem">${exp}</span>`, false);
+        } else {
+            // 完全錯
+            score -= 30;
+            showToast(`❌ 嚴重誤判！正確應為：${typeName}<br><span style="font-size:0.8rem">${exp}</span>`, false);
+        }
+
+        document.getElementById('score').innerText = score;
+        
+        // 移除卡片並生成下一張
+        cardElement.remove();
+        currentCardIndex++;
+        spawnCard();
+    }
+
+    function endGame(isTimeout = false) {
+        gameActive = false;
+        clearInterval(timerId);
+        
+        const modal = document.getElementById('modal');
+        const title = document.getElementById('modal-title');
+        const desc = document.getElementById('modal-desc');
+        const scoreDisplay = document.getElementById('final-score');
+
+        // 時間紅利
+        let timeBonus = isTimeout ? 0 : Math.floor(timeLeft) * 2;
+        let finalScore = Math.max(0, score + timeBonus);
+
+        scoreDisplay.innerText = finalScore;
+
+        if (finalScore >= 900) {
+            title.innerText = "🏆 首席行銷戰略長";
+            title.style.color = "var(--success)";
+            desc.innerHTML = `完美掃描！你成功且迅速地區分了價值網絡（個體環境）與社會趨勢（總體環境）的界線。<br>（含時間紅利：${timeBonus}分）`;
+        } else if (finalScore >= 500) {
+            title.innerText = "👍 資深行銷經理";
+            title.style.color = "#00f0ff";
+            desc.innerHTML = `表現不錯！大部分的環境情報都分類正確，但仍有少部分次級指標被混淆。<br>（含時間紅利：${timeBonus}分）`;
+        } else {
+            title.innerText = "💥 雷達系統紊亂";
+            title.style.color = "var(--danger)";
+            desc.innerHTML = `你似乎將內部可控的「個體環境成員」與外部不可控的「總體環境趨勢」搞混了，請重新複習簡報。`;
+        }
+
+        modal.style.display = "flex";
+    }
+</script>
+
+</body>
+</html>
